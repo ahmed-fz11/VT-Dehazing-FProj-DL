@@ -478,6 +478,25 @@ class DehazeFormer(nn.Module):
 		x = self.layer5(x)
 		x = self.patch_unembed(x)
 		return x
+	
+	def post_processing(self, img):
+		# Differentiable brightness and contrast adjustment
+		# Assume img is a tensor with range [0, 1]
+
+		# Parameters for adjustment: learnable or fixed
+		brightness_factor = nn.Parameter(torch.tensor(0.0))  # Learnable parameter
+		contrast_factor = nn.Parameter(torch.tensor(1.0))    # Learnable parameter
+
+		# Brightness adjustment: img + brightness_factor
+		img = img + brightness_factor
+
+		# Contrast adjustment: img * contrast_factor
+		img = img * contrast_factor
+
+		# Ensure the image is in the correct range [0, 1]
+		img = torch.clamp(img, 0, 1)
+
+		return img
 
 	def forward(self, x):
 		H, W = x.shape[2:]
@@ -488,6 +507,7 @@ class DehazeFormer(nn.Module):
 
 		x = K * x - B + x
 		x = x[:, :, :H, :W]
+		x = self.post_processing(x)
 		return x
 
 
