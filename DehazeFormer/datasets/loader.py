@@ -6,58 +6,48 @@ import cv2
 from torch.utils.data import Dataset
 from utils import hwc_to_chw, read_img
 
+def estimate_airlight_dc(dark_channel, image, percentile=90):
+    """Estimate airlight using the dark channel prior and the percentile of brightness."""
+    num_pixels = dark_channel.size
+    num_brightest = int(max(num_pixels * percentile / 100, 1))
+    dark_vec = dark_channel.ravel()
+    image_vec = image.reshape(num_pixels, 3)
+    indices = np.argsort(dark_vec)
+    indices = indices[-num_brightest:]
+    brightest = image_vec[indices]
+    max_intensity = brightest.max(axis=0)
+    return max_intensity
+
+def estimate_transmission(dark_channel, airlight, omega=0.95):
+    """Estimate transmission map using the airlight and omega."""
+    airlight_reshaped = airlight.reshape(1, 1, 3)
+    transmission = 1 - omega * dark_channel[:, :, None] / airlight_reshaped
+    transmission = np.clip(transmission, 0, 1)
+    return transmission
+
+def recover_scene(image, transmission, airlight, t0=0.1):
+    """Recover the scene radiance from the hazy image, transmission map, and airlight."""
+    refined_transmission = np.clip(transmission, a_min=t0, a_max=1)
+    image_recovered = (image - airlight) / refined_transmission + airlight
+    image_recovered = np.clip(image_recovered, a_min=0, a_max=255)
+    return image_recovered.astype(image.dtype)  # Preserve original data type
+
 def preprocess_hazy_image(image):
-    # Convert image to YCrCb color space
-    ycrcb_image = cv2.cvtColor(image, cv2.COLOR_BGR2YCrCb)
-    channels = cv2.split(ycrcb_image)
+    """Preprocess hazy image to reduce haze."""
+    # print(image.shape)
+    original_dtype = image.dtype  # Save original data type
+    image_float = image.astype(np.float32) / 255.0
+    dark_channel = cv2.min(cv2.min(image_float[:, :, 0], image_float[:, :, 1]), image_float[:, :, 2])
+    kernel_size = 15
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
+    dark_channel = cv2.erode(dark_channel, kernel)
+    airlight = estimate_airlight_dc(dark_channel, image_float)
+    transmission = estimate_transmission(dark_channel, airlight)
+    recovered_image = recover_scene(image_float, transmission, airlight)
+    recovered_image = (recovered_image * 255).astype(original_dtype)  # Convert back to original data type
+    # print(recovered_image.shape)
+    return recovered_image
 
-    # Process Y channel using spectral decomposition
-    y_channel = channels[0].astype(np.float32) / 255.0
-    dft = cv2.dft(y_channel, flags=cv2.DFT_COMPLEX_OUTPUT)
-    dft_shift = np.fft.fftshift(dft)
-
-    # Define the radius for the low frequency region
-    rows, cols = y_channel.shape
-    crow, ccol = rows // 2, cols // 2
-    r = 30
-
-    # Create a circular mask for low pass filtering - to keep low frequencies
-    low_pass_mask = np.zeros((rows, cols, 2), np.uint8)
-    center = (crow, ccol)
-    x, y = np.ogrid[:rows, :cols]
-    mask_area = (x - center[0]) ** 2 + (y - center[1]) ** 2 <= r*r
-    low_pass_mask[mask_area] = 1
-
-    # Apply the low pass mask to the DFT of the Y channel
-    low_frequencies = dft_shift * low_pass_mask
-
-    # Create a circular mask for high pass filtering - to remove low frequencies
-    high_pass_mask = np.ones((rows, cols, 2), np.uint8)
-    high_pass_mask[mask_area] = 0
-
-    # Apply the high pass mask to the DFT of the Y channel
-    high_frequencies = dft_shift * high_pass_mask
-
-    # Combine the low and high frequencies
-    combined_frequencies = low_frequencies * 0.1 + high_frequencies * 1.5
-
-    # Inverse DFT to convert back to the spatial domain
-    combined_ishift = np.fft.ifftshift(combined_frequencies)
-    combined_back = cv2.idft(combined_ishift)
-    combined_back = cv2.magnitude(combined_back[:, :, 0], combined_back[:, :, 1])
-
-    # Normalize the combined image to bring the values between 0 and 1
-    combined_back = cv2.normalize(combined_back, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
-
-    # Convert back to 8-bit
-    combined_back = cv2.convertScaleAbs(combined_back, alpha=(255.0))
-    
-    # Merge the channels back and convert to BGR
-    processed_image = cv2.merge((combined_back, channels[1], channels[2]))
-    processed_image = cv2.cvtColor(processed_image, cv2.COLOR_YCrCb2BGR)
-    processed_image = (processed_image).astype(image.dtype)
-
-    return processed_image
 
 
 def augment(imgs=[], size=256, edge_decay=0., only_h_flip=False):
