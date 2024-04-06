@@ -480,18 +480,16 @@ class DehazeFormer(nn.Module):
 		return x
 	
 	def post_processing(self, img):
-		# Differentiable brightness and contrast adjustment
-		# Assume img is a tensor with range [0, 1]
+		# Apply tone mapping for contrast enhancement
+		# The sigmoid will map the pixel values to a [0, 1] range
+		# with a smooth transition which can improve the visual contrast
 
-		# Parameters for adjustment: learnable or fixed
-		brightness_factor = nn.Parameter(torch.tensor(0.0))  # Learnable parameter
-		contrast_factor = nn.Parameter(torch.tensor(1.0))    # Learnable parameter
+		# Tone mapping parameters
+		midpoint = nn.Parameter(torch.tensor(0.5))  # Learnable parameter
+		scale = nn.Parameter(torch.tensor(10.0))    # Learnable parameter
 
-		# Brightness adjustment: img + brightness_factor
-		img = img + brightness_factor
-
-		# Contrast adjustment: img * contrast_factor
-		img = img * contrast_factor
+		# Apply a sigmoid function for tone mapping
+		img = torch.sigmoid(scale * (img - midpoint))
 
 		# Ensure the image is in the correct range [0, 1]
 		img = torch.clamp(img, 0, 1)
