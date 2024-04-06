@@ -6,6 +6,59 @@ import cv2
 from torch.utils.data import Dataset
 from utils import hwc_to_chw, read_img
 
+def preprocess_hazy_image(image):
+    # Convert image to YCrCb color space
+    ycrcb_image = cv2.cvtColor(image, cv2.COLOR_BGR2YCrCb)
+    channels = cv2.split(ycrcb_image)
+
+    # Process Y channel using spectral decomposition
+    y_channel = channels[0].astype(np.float32) / 255.0
+    dft = cv2.dft(y_channel, flags=cv2.DFT_COMPLEX_OUTPUT)
+    dft_shift = np.fft.fftshift(dft)
+
+    # Define the radius for the low frequency region
+    rows, cols = y_channel.shape
+    crow, ccol = rows // 2, cols // 2
+    r = 30
+
+    # Create a circular mask for low pass filtering - to keep low frequencies
+    low_pass_mask = np.zeros((rows, cols, 2), np.uint8)
+    center = (crow, ccol)
+    x, y = np.ogrid[:rows, :cols]
+    mask_area = (x - center[0]) ** 2 + (y - center[1]) ** 2 <= r*r
+    low_pass_mask[mask_area] = 1
+
+    # Apply the low pass mask to the DFT of the Y channel
+    low_frequencies = dft_shift * low_pass_mask
+
+    # Create a circular mask for high pass filtering - to remove low frequencies
+    high_pass_mask = np.ones((rows, cols, 2), np.uint8)
+    high_pass_mask[mask_area] = 0
+
+    # Apply the high pass mask to the DFT of the Y channel
+    high_frequencies = dft_shift * high_pass_mask
+
+    # Combine the low and high frequencies
+    combined_frequencies = low_frequencies * 0.1 + high_frequencies * 1.5
+
+    # Inverse DFT to convert back to the spatial domain
+    combined_ishift = np.fft.ifftshift(combined_frequencies)
+    combined_back = cv2.idft(combined_ishift)
+    combined_back = cv2.magnitude(combined_back[:, :, 0], combined_back[:, :, 1])
+
+    # Normalize the combined image to bring the values between 0 and 1
+    combined_back = cv2.normalize(combined_back, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
+
+    # Convert back to 8-bit
+    combined_back = cv2.convertScaleAbs(combined_back, alpha=(255.0))
+    
+    # Merge the channels back and convert to BGR
+    processed_image = cv2.merge((combined_back, channels[1], channels[2]))
+    processed_image = cv2.cvtColor(processed_image, cv2.COLOR_YCrCb2BGR)
+    processed_image = (processed_image).astype(image.dtype)
+
+    return processed_image
+
 
 def augment(imgs=[], size=256, edge_decay=0., only_h_flip=False):
 	H, W, _ = imgs[0].shape
@@ -75,6 +128,7 @@ class PairLoader(Dataset):
 		img_name = self.img_names[idx]
 		source_img = read_img(os.path.join(self.root_dir, 'hazy', img_name)) * 2 - 1
 		target_img = read_img(os.path.join(self.root_dir, 'GT', img_name)) * 2 - 1
+		source_img = preprocess_hazy_image(source_img)
 		
 		if self.mode == 'train':
 			[source_img, target_img] = augment([source_img, target_img], self.size, self.edge_decay, self.only_h_flip)
