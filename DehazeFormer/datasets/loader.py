@@ -32,21 +32,44 @@ def recover_scene(image, transmission, airlight, t0=0.1):
     image_recovered = np.clip(image_recovered, a_min=0, a_max=255)
     return image_recovered.astype(image.dtype)  # Preserve original data type
 
+# def preprocess_hazy_image(image):
+#     """Preprocess hazy image to reduce haze."""
+#     # print(image.shape)
+#     original_dtype = image.dtype  # Save original data type
+#     image_float = image.astype(np.float32) / 255.0
+#     dark_channel = cv2.min(cv2.min(image_float[:, :, 0], image_float[:, :, 1]), image_float[:, :, 2])
+#     kernel_size = 15
+#     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
+#     dark_channel = cv2.erode(dark_channel, kernel)
+#     airlight = estimate_airlight_dc(dark_channel, image_float)
+#     transmission = estimate_transmission(dark_channel, airlight)
+#     recovered_image = recover_scene(image_float, transmission, airlight)
+#     recovered_image = (recovered_image * 255).astype(original_dtype)  # Convert back to original data type
+#     # print(recovered_image.shape)
+#     return recovered_image
+
 def preprocess_hazy_image(image):
-    """Preprocess hazy image to reduce haze."""
-    # print(image.shape)
-    original_dtype = image.dtype  # Save original data type
-    image_float = image.astype(np.float32) / 255.0
-    dark_channel = cv2.min(cv2.min(image_float[:, :, 0], image_float[:, :, 1]), image_float[:, :, 2])
-    kernel_size = 15
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
-    dark_channel = cv2.erode(dark_channel, kernel)
-    airlight = estimate_airlight_dc(dark_channel, image_float)
-    transmission = estimate_transmission(dark_channel, airlight)
-    recovered_image = recover_scene(image_float, transmission, airlight)
-    recovered_image = (recovered_image * 255).astype(original_dtype)  # Convert back to original data type
-    # print(recovered_image.shape)
-    return recovered_image
+    # print("Input img dtype: ",image.dtype)
+    # print("Input img shape: ",image.shape)
+    # Convert the image to the LAB color space
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2Lab)
+    
+    # Split the LAB image to L, A, and B channels
+    l, a, b = cv2.split(lab)
+    
+    # Apply CLAHE to L channel
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    cl = clahe.apply(l)
+    
+    # Merge the CLAHE enhanced L channel with the original A and B channel
+    limg = cv2.merge((cl,a,b))
+    
+    # Convert the LAB image back to BGR
+    processed_img = cv2.cvtColor(limg, cv2.COLOR_Lab2BGR)
+    # print("Output img dtype: ",processed_image.dtype)
+    # print("Output img shape: ",processed_image.shape)
+    
+    return processed_img
 
 
 
@@ -118,7 +141,7 @@ class PairLoader(Dataset):
 		img_name = self.img_names[idx]
 		source_img = read_img(os.path.join(self.root_dir, 'hazy', img_name)) * 2 - 1
 		target_img = read_img(os.path.join(self.root_dir, 'GT', img_name)) * 2 - 1
-		# source_img = preprocess_hazy_image(source_img)
+		source_img = preprocess_hazy_image(source_img)
 		
 		if self.mode == 'train':
 			[source_img, target_img] = augment([source_img, target_img], self.size, self.edge_decay, self.only_h_flip)

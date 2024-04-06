@@ -505,7 +505,7 @@ class DehazeFormer(nn.Module):
 
 		x = K * x - B + x
 		x = x[:, :, :H, :W]
-		x = self.post_processing(x)
+		# x = self.post_processing(x)
 		return x
 
 
