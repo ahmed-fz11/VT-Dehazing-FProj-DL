@@ -479,22 +479,18 @@ class DehazeFormer(nn.Module):
 		x = self.patch_unembed(x)
 		return x
 	
-	def post_processing(self, img):
-		# Apply tone mapping for contrast enhancement
-		# The sigmoid will map the pixel values to a [0, 1] range
-		# with a smooth transition which can improve the visual contrast
-
-		# Tone mapping parameters
-		midpoint = nn.Parameter(torch.tensor(0.5))  # Learnable parameter
-		scale = nn.Parameter(torch.tensor(10.0))    # Learnable parameter
-
-		# Apply a sigmoid function for tone mapping
-		img = torch.sigmoid(scale * (img - midpoint))
-
-		# Ensure the image is in the correct range [0, 1]
-		img = torch.clamp(img, 0, 1)
-
-		return img
+	# def post_processing(self, img):
+	# 	# Applying tone mapping for contrast enhancement
+	# 	# The sigmoid will map the pixel values to a [0, 1] range
+	# 	# with a smooth transition which can improve the visual contrast
+	# 	# Tone mapping parameters
+	# 	midpoint = nn.Parameter(torch.tensor(0.5))  # Learnable parameter
+	# 	scale = nn.Parameter(torch.tensor(10.0))    # Learnable parameter
+	# 	# Apply a sigmoid function for tone mapping
+	# 	img = torch.sigmoid(scale * (img - midpoint))
+	# 	# Ensuring the image is in the correct range [0, 1]
+	# 	img = torch.clamp(img, 0, 1)
+	# 	return img
 
 	def forward(self, x):
 		H, W = x.shape[2:]

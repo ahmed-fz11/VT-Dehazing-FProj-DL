@@ -6,31 +6,31 @@ import cv2
 from torch.utils.data import Dataset
 from utils import hwc_to_chw, read_img
 
-def estimate_airlight_dc(dark_channel, image, percentile=90):
-    """Estimate airlight using the dark channel prior and the percentile of brightness."""
-    num_pixels = dark_channel.size
-    num_brightest = int(max(num_pixels * percentile / 100, 1))
-    dark_vec = dark_channel.ravel()
-    image_vec = image.reshape(num_pixels, 3)
-    indices = np.argsort(dark_vec)
-    indices = indices[-num_brightest:]
-    brightest = image_vec[indices]
-    max_intensity = brightest.max(axis=0)
-    return max_intensity
+# def estimate_airlight_dc(dark_channel, image, percentile=90):
+#     """Estimate airlight using the dark channel prior and the percentile of brightness."""
+#     num_pixels = dark_channel.size
+#     num_brightest = int(max(num_pixels * percentile / 100, 1))
+#     dark_vec = dark_channel.ravel()
+#     image_vec = image.reshape(num_pixels, 3)
+#     indices = np.argsort(dark_vec)
+#     indices = indices[-num_brightest:]
+#     brightest = image_vec[indices]
+#     max_intensity = brightest.max(axis=0)
+#     return max_intensity
 
-def estimate_transmission(dark_channel, airlight, omega=0.95):
-    """Estimate transmission map using the airlight and omega."""
-    airlight_reshaped = airlight.reshape(1, 1, 3)
-    transmission = 1 - omega * dark_channel[:, :, None] / airlight_reshaped
-    transmission = np.clip(transmission, 0, 1)
-    return transmission
+# def estimate_transmission(dark_channel, airlight, omega=0.95):
+#     """Estimate transmission map using the airlight and omega."""
+#     airlight_reshaped = airlight.reshape(1, 1, 3)
+#     transmission = 1 - omega * dark_channel[:, :, None] / airlight_reshaped
+#     transmission = np.clip(transmission, 0, 1)
+#     return transmission
 
-def recover_scene(image, transmission, airlight, t0=0.1):
-    """Recover the scene radiance from the hazy image, transmission map, and airlight."""
-    refined_transmission = np.clip(transmission, a_min=t0, a_max=1)
-    image_recovered = (image - airlight) / refined_transmission + airlight
-    image_recovered = np.clip(image_recovered, a_min=0, a_max=255)
-    return image_recovered.astype(image.dtype)  # Preserve original data type
+# def recover_scene(image, transmission, airlight, t0=0.1):
+#     """Recover the scene radiance from the hazy image, transmission map, and airlight."""
+#     refined_transmission = np.clip(transmission, a_min=t0, a_max=1)
+#     image_recovered = (image - airlight) / refined_transmission + airlight
+#     image_recovered = np.clip(image_recovered, a_min=0, a_max=255)
+#     return image_recovered.astype(image.dtype)  # Preserve original data type
 
 # def preprocess_hazy_image(image):
 #     """Preprocess hazy image to reduce haze."""
@@ -49,25 +49,21 @@ def recover_scene(image, transmission, airlight, t0=0.1):
 #     return recovered_image
 
 def preprocess_hazy_image(image):
-    # print("Input img dtype: ",image.dtype)
-    # print("Input img shape: ",image.shape)
-    # Convert the image to the LAB color space
-    lab = cv2.cvtColor(image, cv2.COLOR_BGR2Lab)
-    
+    # Scale the float32 image to the range [0, 255] and convert to uint8
+    image_8bit = cv2.normalize(image, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+    # Convert the 8-bit image to the LAB color space
+    lab = cv2.cvtColor(image_8bit, cv2.COLOR_BGR2Lab)
     # Split the LAB image to L, A, and B channels
     l, a, b = cv2.split(lab)
-    
     # Apply CLAHE to L channel
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
     cl = clahe.apply(l)
-    
-    # Merge the CLAHE enhanced L channel with the original A and B channel
-    limg = cv2.merge((cl,a,b))
-    
+    # Merge the CLAHE enhanced L channel with the original A and B channels
+    limg = cv2.merge((cl, a, b))
     # Convert the LAB image back to BGR
-    processed_img = cv2.cvtColor(limg, cv2.COLOR_Lab2BGR)
-    # print("Output img dtype: ",processed_image.dtype)
-    # print("Output img shape: ",processed_image.shape)
+    processed_img_8bit = cv2.cvtColor(limg, cv2.COLOR_Lab2BGR)
+    # Convert the 8-bit processed image back to float32
+    processed_img = processed_img_8bit.astype('float32') / 255.0
     
     return processed_img
 
