@@ -494,8 +494,12 @@ class DehazeFormer(nn.Module):
 	# 	return img
  
 	def post_processing(self,image):
-		if not isinstance(image, np.ndarray):
-			image = np.array(image)
+		# Move the tensor to CPU if it's located on GPU
+		if image.is_cuda:
+			image = image.cpu()
+
+		# Convert to NumPy array
+		image = image.numpy()
 		# Scale the float32 image to the range [0, 255] and convert to uint8
 		image_8bit = cv2.normalize(image, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
 		# Convert the 8-bit image to the LAB color space
