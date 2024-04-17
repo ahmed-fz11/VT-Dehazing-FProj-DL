@@ -493,7 +493,9 @@ class DehazeFormer(nn.Module):
 	# 	img = torch.clamp(img, 0, 1)
 	# 	return img
  
-	def post_processing(image):
+	def post_processing(self,image):
+		if not isinstance(image, np.ndarray):
+			image = np.array(image)
 		# Scale the float32 image to the range [0, 255] and convert to uint8
 		image_8bit = cv2.normalize(image, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
 		# Convert the 8-bit image to the LAB color space
