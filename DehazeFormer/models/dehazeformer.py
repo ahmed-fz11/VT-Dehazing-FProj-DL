@@ -5,6 +5,7 @@ import math
 import numpy as np
 from torch.nn.init import _calculate_fan_in_and_fan_out
 from timm.models.layers import to_2tuple, trunc_normal_
+import cv2
 
 
 class RLN(nn.Module):
@@ -51,7 +52,7 @@ class Mlp(nn.Module):
 
 		self.mlp = nn.Sequential(
 			nn.Conv2d(in_features, hidden_features, 1),
-			nn.ReLU(True),
+			nn.PReLU(),
 			nn.Conv2d(hidden_features, out_features, 1)
 		)
 
@@ -112,7 +113,7 @@ class WindowAttention(nn.Module):
 		self.register_buffer("relative_positions", relative_positions)
 		self.meta = nn.Sequential(
 			nn.Linear(2, 256, bias=True),
-			nn.ReLU(True),
+			nn.PReLU(),
 			nn.Linear(256, num_heads, bias=True)
 		)
 
@@ -155,7 +156,7 @@ class Attention(nn.Module):
 		if self.conv_type == 'Conv':
 			self.conv = nn.Sequential(
 				nn.Conv2d(dim, dim, kernel_size=3, padding=1, padding_mode='reflect'),
-				nn.ReLU(True),
+				nn.PReLU(),
 				nn.Conv2d(dim, dim, kernel_size=3, padding=1, padding_mode='reflect')
 			)
 
@@ -356,7 +357,7 @@ class SKFusion(nn.Module):
 		self.avg_pool = nn.AdaptiveAvgPool2d(1)
 		self.mlp = nn.Sequential(
 			nn.Conv2d(dim, d, 1, bias=False), 
-			nn.ReLU(),
+			nn.PReLU(),
 			nn.Conv2d(d, dim*height, 1, bias=False)
 		)
 		
@@ -491,6 +492,25 @@ class DehazeFormer(nn.Module):
 	# 	# Ensuring the image is in the correct range [0, 1]
 	# 	img = torch.clamp(img, 0, 1)
 	# 	return img
+ 
+	def post_processing(image):
+		# Scale the float32 image to the range [0, 255] and convert to uint8
+		image_8bit = cv2.normalize(image, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+		# Convert the 8-bit image to the LAB color space
+		lab = cv2.cvtColor(image_8bit, cv2.COLOR_BGR2Lab)
+		# Split the LAB image to L, A, and B channels
+		l, a, b = cv2.split(lab)
+		# Apply CLAHE to L channel
+		clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+		cl = clahe.apply(l)
+		# Merge the CLAHE enhanced L channel with the original A and B channels
+		limg = cv2.merge((cl, a, b))
+		# Convert the LAB image back to BGR
+		processed_img_8bit = cv2.cvtColor(limg, cv2.COLOR_Lab2BGR)
+		# Convert the 8-bit processed image back to float32
+		processed_img = processed_img_8bit.astype('float32') / 255.0
+		
+		return processed_img
 
 	def forward(self, x):
 		H, W = x.shape[2:]
@@ -501,7 +521,7 @@ class DehazeFormer(nn.Module):
 
 		x = K * x - B + x
 		x = x[:, :, :H, :W]
-		# x = self.post_processing(x)
+		x = self.post_processing(x)
 		return x
 
 
