@@ -515,6 +515,7 @@ class DehazeFormer(nn.Module):
 		processed_img_8bit = cv2.cvtColor(limg, cv2.COLOR_Lab2BGR)
 		# Convert the 8-bit processed image back to float32
 		processed_img = processed_img_8bit.astype('float32') / 255.0
+		processed_img = image = torch.from_numpy(image_8bit).to(image.device)
 		
 		return processed_img
 
@@ -527,7 +528,7 @@ class DehazeFormer(nn.Module):
 
 		x = K * x - B + x
 		x = x[:, :, :H, :W]
-		x = self.post_processing(x)
+		# x = self.post_processing(x)
 		return x
 
 
